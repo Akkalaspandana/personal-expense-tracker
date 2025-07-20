@@ -4,3 +4,7 @@ plotly==5.17.0
 sqlite3
 datetime
 pathlib 
+streamlit
+pandas
+numpy
+matplotlib
