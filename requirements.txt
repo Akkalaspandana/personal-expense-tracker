@@ -2,7 +2,4 @@ streamlit==1.28.1
 pandas==2.1.3
 numpy
 matplotlib
-plotly==5.17.0
-sqlite3
-datetime
-pathlib 
+plotly==5.17.0 
