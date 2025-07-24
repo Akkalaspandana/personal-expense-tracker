@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime, timedelta
 import os
 from pathlib import Path
+import bcrypt
 
 # Page configuration
 st.set_page_config(
@@ -47,10 +48,9 @@ class ExpenseTracker:
         self.init_database()
     
     def init_database(self):
-        """Initialize SQLite database with expenses table"""
+        """Initialize SQLite database with expenses and users tables"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,9 +62,41 @@ class ExpenseTracker:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         conn.commit()
         conn.close()
+
+    def register_user(self, username, password):
+        """Register a new user with hashed password"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        try:
+            cursor.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, password_hash))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+        finally:
+            conn.close()
+
+    def authenticate_user(self, username, password):
+        """Authenticate user by username and password"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE username = ?', (username,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return bcrypt.checkpw(password.encode('utf-8'), row[0])
+        return False
     
     def add_expense(self, date, category, description, amount, payment_method):
         """Add a new expense to the database"""
@@ -109,7 +141,44 @@ class ExpenseTracker:
 def main():
     # Initialize expense tracker
     tracker = ExpenseTracker()
-    
+
+    # --- Authentication UI ---
+    if 'authenticated' not in st.session_state:
+        st.session_state['authenticated'] = False
+    if 'username' not in st.session_state:
+        st.session_state['username'] = ''
+    auth_mode = st.sidebar.radio('Login or Register', ['Login', 'Register'])
+    if not st.session_state['authenticated']:
+        st.sidebar.title('User Authentication')
+        username = st.sidebar.text_input('Username')
+        password = st.sidebar.text_input('Password', type='password')
+        if auth_mode == 'Login':
+            if st.sidebar.button('Login'):
+                if tracker.authenticate_user(username, password):
+                    st.session_state['authenticated'] = True
+                    st.session_state['username'] = username
+                    st.sidebar.success(f'Logged in as {username}')
+                    st.experimental_rerun()
+                else:
+                    st.sidebar.error('Invalid username or password')
+        else:
+            if st.sidebar.button('Register'):
+                if username and password:
+                    if tracker.register_user(username, password):
+                        st.sidebar.success('Registration successful! Please log in.')
+                    else:
+                        st.sidebar.error('Username already exists')
+                else:
+                    st.sidebar.error('Please enter a username and password')
+        st.stop()
+    else:
+        st.sidebar.write(f'Logged in as: {st.session_state["username"]}')
+        if st.sidebar.button('Logout'):
+            st.session_state['authenticated'] = False
+            st.session_state['username'] = ''
+            st.experimental_rerun()
+    # --- End Authentication UI ---
+
     # Header
     st.markdown('<h1 class="main-header">💰 Personal Expense Tracker</h1>', unsafe_allow_html=True)
     
